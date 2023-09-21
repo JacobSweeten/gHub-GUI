@@ -38,7 +38,7 @@ int initUSB();
 int setPrimaryColor(device_t*, char, char, char);
 int setSecondaryColor(device_t*, char, char, char);
 
-void CloseDevice(device_t*);
+void closeDevice(device_t*);
 int openDevice(device_t*);
 deviceList_t* getGDevices(void);
 

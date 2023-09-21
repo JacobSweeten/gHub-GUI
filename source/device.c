@@ -27,9 +27,13 @@ int initUSB()
 	return returnCode;
 }
 
-void CloseDevice(device_t* device) {
+void closeDevice(device_t* device) {
 	if (device->handle)
+	{
 		libusb_close(device->handle);
+		device->handle = NULL;
+	}
+
 }
 
 // Detach driver from device
@@ -44,7 +48,7 @@ void DetachKernel(device_t* device) {
 		fprintf(stderr, "Error: Cannot claim interface: %s\n",
 		libusb_error_name(returnCode));
 
-		CloseDevice(device);
+		closeDevice(device);
 		return;
 	}
 }

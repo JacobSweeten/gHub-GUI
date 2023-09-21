@@ -8,21 +8,15 @@
 #include <time.h>
 #include <stdbool.h>
 
-// X11 lib (for GUI)
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xos.h>
-
 // USB lib
 #include <libusb-1.0/libusb.h>
 
 // Local includes
 #include "device.h"
+#include "window.h"
 
 #define LIBUSB_OPTION_LOG_LEVEL	0
 #define LIBUSB_LOG_LEVEL_ERROR	1
-
-//Item* available_head; // the list contains available devices
 
 //temporary
 int temp_id;
@@ -43,12 +37,15 @@ int main(void) {
 	{
 		printDevice(current->dev);
 		openDevice(&current->dev);
-		setPrimaryColor(&current->dev, 0x00, 0x00, 0x00);
-		setSecondaryColor(&current->dev, 0x00, 0x00, 0x00);
+		setPrimaryColor(&current->dev, 0xFF, 0x66, 0x00);
+		setSecondaryColor(&current->dev, 0xFF, 0x66, 0x00);
+		closeDevice(&current->dev);
 		current = current->next;
 	}
 
 	libusb_exit(NULL);
+
+	initDisplay();
 
 	return EXIT_SUCCESS;
 }
