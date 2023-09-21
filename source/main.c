@@ -13,6 +13,9 @@
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
 
+// USB lib
+#include <libusb-1.0/libusb.h>
+
 // Local includes
 #include "mouselist.h"
 #include "device.h"
@@ -20,19 +23,14 @@
 #define LIBUSB_OPTION_LOG_LEVEL	0
 #define LIBUSB_LOG_LEVEL_ERROR	1
 
-static int source, type, R, G, B;
-static const int bmRequestType = 0x21; // type and recipient: 0b00100001
-static const int bRequest = 0x09; // type of request: set_report
-static const int wValue = 0x0211; // report type and id: output, 0x11
-int wIndex, returnCode, found = 0;
-
 Item* available_head; // the list contains available devices
 
 //temporary
 int temp_id;
 
 int main(void) {
-	if(initUSB() < 0)
+	int returnCode = initUSB();
+	if(returnCode < 0)
 	{
 		fprintf(stderr, "Error: Cannot initialize libusb. %s\n", libusb_error_name(returnCode));
 		return 1;
@@ -81,45 +79,30 @@ int main(void) {
 	available_head = (Item*)malloc(size_of_Item);
 	available_head->next = NULL;
 
+	device_t device;
+
 	// find device
 	returnCode = getDevice(head);
 	if (!returnCode) {
 		fprintf(stderr, "Error: Cannot find any logitech mouse. %s\n", libusb_error_name(returnCode));
-		CloseDeviceAndExit();
+		CloseDevice(&device);
 
 		return returnCode;
 	}
 
-	returnCode = openDevice();
+	returnCode = openDevice(&device, head);
 	if (returnCode == 2) {
 		deleteLinkedList(&head);
 		deleteLinkedList(&available_head);
-		CloseDeviceAndExit();
+		CloseDevice(&device);
 		return EXIT_SUCCESS;
 	}
 	if (returnCode < 0) {
 		fprintf(stderr, "Error: Cannot operate logitech mouse. %s\n", libusb_error_name(returnCode));
-		CloseDeviceAndExit();
+		CloseDevice(&device);
 		return EXIT_FAILURE;
 	}
 
-	if (returnCode >= 0) {
-		printf("Now, the color of your ");
-		switch (source) {
-			case 0:
-				printf("primary ");
-				break;
-			case 1:
-				printf("logo ");
-				break;
-			default:
-				printf("undefined!\n");
-				deleteLinkedList(&head);
-				deleteLinkedList(&available_head);
-				exit(EXIT_FAILURE);
-		}
-		printf("is #%02x%02x%02x\n",R,G,B);
-	}
 
 	deleteLinkedList(&head);
 	deleteLinkedList(&available_head);

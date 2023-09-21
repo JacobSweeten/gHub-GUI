@@ -1,22 +1,36 @@
-#pragma once
+#ifndef DEVICE_H
+#define DEVICE_H
 
 #include <stdio.h>
 
 // USB lib
 #include <libusb-1.0/libusb.h>
 
+// Local includes
 #include "mouselist.h"
 
-enum deviceType {KEYBOARD, MOUSE};
-enum deviceModel {G502};
+typedef enum deviceType {KEYBOARD, MOUSE} deviceType;
+typedef enum deviceModel {G502} deviceModel;
+typedef enum colorType {PRIMARY, SECONDARY} colorType;
 
-typedef struct dev_s {
-    libusb_device_handle* handle;
-    char* name;
-    deviceType type;
-    deviceModel model;
-} dev_t;
+typedef struct device_t {
+	libusb_device_handle* handle;
+	char* name;
+	deviceType type;
+	deviceModel model;
+	int wIndex;
+	uint8_t mByte3;
+} device_t;
 
 int initUSB();
-int setPrimaryColor(dev_t*, char, char, char);
-int setSecondaryColor(dev_t*, char, char, char);
+int setColor(device_t*, colorType, char, char, char);
+int setPrimaryColor(device_t*, char, char, char);
+int setSecondaryColor(device_t*, char, char, char);
+
+void CloseDevice(device_t*);
+void DetachKernel(device_t*);
+void AttachKernel(device_t*);
+int openDevice(device_t*, Item*);
+int getDevice(Item*);
+
+#endif
