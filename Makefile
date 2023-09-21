@@ -1,20 +1,20 @@
-OBJS	= main.o mouselist.o
-SOURCE	= main.c mouselist.c
-HEADER	= mouselist.h miscellaneous.h
-OUT	= ghub-gui
+OUT	= ./bin/ghub-gui
 CC	 = gcc
 FLAGS	 = -g -c -Wall
-LFLAGS	 = -lusb-1.0
+LFLAGS	 = -lusb-1.0 -lX11
+INCLUDE = ./include
 
-all: $(OBJS)
-	$(CC) -g $(OBJS) -o $(OUT) $(LFLAGS)
+all: obj/main.o obj/mouselist.o
+	$(CC) -g $^ -o $(OUT) $(LFLAGS)
 
-main.o: main.c
-	$(CC) $(FLAGS) main.c
+obj/main.o: source/main.c
+	$(CC) -I$(INCLUDE) $(FLAGS) $^ -o $@
 
-singlylinkedlist.o: mouselist.c
-	$(CC) $(FLAGS) mouselist.c
+obj/mouselist.o: source/mouselist.c
+	$(CC) -I$(INCLUDE) $(FLAGS) $^ -o $@
 
 
 clean:
-	rm -f $(OBJS) $(OUT)
+	rm -f obj/*
+	rm -f bin/*
+
