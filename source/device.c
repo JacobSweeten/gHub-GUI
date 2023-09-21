@@ -1,6 +1,14 @@
 #include "device.h"
 
-libusb_context* global_context;
+#define LOGITECHVENDORID 0x046d
+#define UNIDENTIFIEDPRODUCTID 0xc539
+
+#define NUM_VALID_IDS 1
+const short validIDs[] = {
+	0xc332
+};
+
+libusb_context* global_context = NULL;
 
 static const int bmRequestType = 0x21; // type and recipient: 0b00100001
 static const int bRequest = 0x09; // type of request: set_report
@@ -29,7 +37,7 @@ void DetachKernel(device_t* device) {
 	if (libusb_kernel_driver_active(device->handle, device->wIndex)) {
 		libusb_detach_kernel_driver(device->handle, device->wIndex);
 	}
-
+	
 	int returnCode = libusb_claim_interface(device->handle, device->wIndex);
 
 	if (returnCode < 0) {
@@ -50,93 +58,128 @@ void AttachKernel(device_t* device) {
 	}
 }
 
-int openDevice(device_t* device, Item* head) {
-	// Get number of devices available
-	const int available = getSize(head);
+int openDevice(device_t* device) {
+	device->handle = libusb_open_device_with_vid_pid(global_context, LOGITECHVENDORID, device->modelID);
 
-	// Ask the user which one
-	int choice;
-
-	printf("\nChoose what device you would like to operate on. Available devices:\n");
-	printAllItems(head);
-	printf("Enter [0] to exit.\n");
-
-	// Loop until proper input is given
-	while(1)
+	if(device->handle == NULL)
 	{
-		choice = getchar() - '0';
-		if ((choice < 0) || (choice > available)) {
-			printf("Choose correct number or exit!\n");
-			fflush(stdin);
-		} else if (choice == 0) {
-			printf("Exiting...\n");
-			fflush(stdin);
-			return 2;
-		}
-		else
-		{
-			break;
-		}
+		fprintf(stderr, "Failed to open device\n");
+		return 1;
 	}
 
-	// After selection, set the color
-
-	// Get the ID and name
-	const int needed_id = getNthId(head, choice);
-	const char* temp_name = getName(head, needed_id);
-
-	//open device
-	device->handle = libusb_open_device_with_vid_pid(NULL, ID_VENDOR, needed_id);
-	if (!device->handle) {
-		fprintf(stderr, "Error: Cannot open %s\n", temp_name);
-		return -1;
-	}
-	printf("\nDevice %s is operating...\n", temp_name);
-
-	//process
-	srand((unsigned)time(NULL));
-	device->wIndex = getInterface(head, needed_id);
-	
-	
-	if (device->handle)
-		libusb_close(device->handle);
-
-	return EXIT_SUCCESS;
+	return 0;
 }
 
-int getDevice(Item* head) {
-	libusb_device **list;
+bool isvalidProductID(short productID)
+{
+	for(int i = 0; i < NUM_VALID_IDS; i++)
+	{
+		if(validIDs[i] == productID)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void populateDeviceInfo(device_t* device)
+{
+	switch(device->modelID)
+	{
+		case 0xc332:
+			device->type = MOUSE;
+			device->mByte3 = 0x02;
+			device->model = G502;
+			device->wIndex = WIRED_OR_CABLE;
+	}
+}
+
+deviceList_t* getGDevices() {
+	// Destination variables
+	libusb_device** list;
 	struct libusb_device_descriptor desc;
 
-	int i;
+	// Output list
+	deviceList_t* listHead = NULL;
+
+	// Get number of USB devices
 	ssize_t count = libusb_get_device_list(global_context, &list);
-	int found = 0;
 
-	for (i = 0; i < count; ++i) {
-		libusb_device *device = list[i];
+	for (int i = 0; i < count; i++) {
+		libusb_device* device = list[i];
 
-		if (!libusb_get_device_descriptor(device, &desc)) {
-			if (desc.idProduct == ID_PRODUCT_UNIDENTIFIED) {
-				printf("Found wireless logitech device, but it's UNIDENTIFIED.\n");
-				printf("Consider upgrading the kernel to at least version of 5.2.\nOr use wired option of your mouse.\n\n");
-				continue;
+		int res = libusb_get_device_descriptor(device, &desc);
+
+		if(res != 0)
+		{
+			fprintf(stderr, "Failed to get a device descriptor.\n");
+			i++;
+			continue;
+		}
+
+		if (desc.idProduct == UNIDENTIFIEDPRODUCTID) {
+			printf("Found wireless logitech device, but it's UNIDENTIFIED.\n");
+			printf("Consider upgrading the kernel to at least version of 5.2.\nOr use wired option of your mouse.\n\n");
+			i++;
+			continue;
+		}
+
+		if (LOGITECHVENDORID == desc.idVendor && isvalidProductID(desc.idProduct)) {
+			deviceList_t* newDevice = (deviceList_t*)malloc(sizeof(deviceList_t));
+
+			// Get product name
+			libusb_device_handle* tempHandle = libusb_open_device_with_vid_pid(global_context, LOGITECHVENDORID, desc.idProduct);
+			
+			if(tempHandle == NULL)
+			{
+				newDevice->dev.name = "";
+			}
+			else
+			{
+				newDevice->dev.name = (char*)malloc(51);
+				int len = libusb_get_string_descriptor_ascii(tempHandle, desc.iProduct, (unsigned char*)newDevice->dev.name, 50);
+
+				if(len < 0)
+				{
+					newDevice->dev.name = "";
+				}
 			}
 
-			if (ID_VENDOR == desc.idVendor && searchItem(head, desc.idProduct)) {
-				const char* temp_name = getName(head, desc.idProduct);
-				const int temp_interface = getInterface(head, desc.idProduct);
-				const int temp_byte3 = getByte3(head, desc.idProduct);
+			libusb_close(tempHandle);
 
-				pushItem(&head, desc.idProduct, temp_name, temp_interface, temp_byte3);
-				printf("\nDevice id=0x%x, name=%s, interface=%x - has been found!\n", desc.idProduct, temp_name, temp_interface);
-				found++;
+			// Populate details
+			newDevice->next = NULL;
+			newDevice->dev.handle = 0;
+			newDevice->dev.modelID = desc.idProduct;
+
+			populateDeviceInfo(&newDevice->dev);
+			
+			printf("Device id=0x%x, name=%s - has been found!\n", desc.idProduct, newDevice->dev.name);
+			
+			// Append to list
+			if(listHead == NULL)
+			{
+				listHead = newDevice;
+			}
+			else
+			{
+				deviceList_t* current = listHead;
+
+				while(current->next != NULL)
+				{
+					current = current->next;
+				}
+
+				current->next = listHead;
 			}
 		}
 	}
-	if (!found) return found;
+
+	// Clean up
 	libusb_free_device_list(list, 1);
 
-	return 1;
+	return listHead;
 }
 
 int setColor(device_t* device, colorType ct, char R, char G, char B)
@@ -170,9 +213,6 @@ int setColor(device_t* device, colorType ct, char R, char G, char B)
 	*/
 
 	int type = 0x01; // static
-	R = 0xFF;
-	G = 0x66;
-	B = 0x00;
 
 	int source;
 
@@ -194,6 +234,7 @@ int setColor(device_t* device, colorType ct, char R, char G, char B)
 		&
 		claim the interface on a given device handle */
 	DetachKernel(device);
+
 	int returnCode = libusb_control_transfer(device->handle, bmRequestType, bRequest, wValue,
 										 device->wIndex, data, sizeof(data), 2000);
 	if (returnCode < 0) {
@@ -204,6 +245,8 @@ int setColor(device_t* device, colorType ct, char R, char G, char B)
 		&
 		attach kernel */
 	AttachKernel(device);
+
+	return 0;
 }
 
 int setPrimaryColor(device_t* device, char R, char G, char B)
@@ -214,4 +257,10 @@ int setPrimaryColor(device_t* device, char R, char G, char B)
 int setSecondaryColor(device_t* device, char R, char G, char B)
 {
 	return setColor(device, SECONDARY, R, G, B);
+}
+
+void printDevice(device_t device)
+{
+	printf("Device name: %s\n", device.name);
+	printf("\tProduct ID: %i\n\tVendor ID: %i\n\tmByte3 (\?\?\?): %i\n\twIndex: %i\n", device.modelID, LOGITECHVENDORID, device.mByte3, device.wIndex);
 }
