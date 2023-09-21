@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <stdbool.h>
 
 // USB lib
 #include <libusb-1.0/libusb.h>
@@ -16,7 +17,6 @@
 
 // Local includes
 #include "mouselist.h"
-#include "miscellaneous.h"
 
 #define LIBUSB_OPTION_LOG_LEVEL	0
 #define LIBUSB_LOG_LEVEL_ERROR	1
