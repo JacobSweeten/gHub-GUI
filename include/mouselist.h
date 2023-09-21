@@ -1,7 +1,6 @@
 // Copyright 2020 Mikhail ysph Subbotin
-
-#ifndef MOUSE_LIST_H
-#define MOUSE_LIST_H
+// Modified by Jacob Sweeten
+#pragma once
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,5 +32,3 @@ const char* getName(Item* head, const int search_idProduct);
 const uint8_t getByte3(Item* head, const int search_idProduct);
 const int getSize(Item* head);
 const int getNthId(Item* head, int nth);
-
-#endif  // MOUSE_LIST_H

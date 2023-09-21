@@ -1,4 +1,5 @@
 // Copyright 2020 Mikhail ysph Subbotin
+// Modified by Jacob Sweeten
 
 // C includes
 #include <stdio.h>
@@ -7,9 +8,6 @@
 #include <time.h>
 #include <stdbool.h>
 
-// USB lib
-#include <libusb-1.0/libusb.h>
-
 // X11 lib (for GUI)
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -17,12 +15,10 @@
 
 // Local includes
 #include "mouselist.h"
+#include "device.h"
 
 #define LIBUSB_OPTION_LOG_LEVEL	0
 #define LIBUSB_LOG_LEVEL_ERROR	1
-
-static libusb_device_handle *devh = NULL;
-libusb_context *global_context;
 
 static int source, type, R, G, B;
 static const int bmRequestType = 0x21; // type and recipient: 0b00100001
@@ -35,177 +31,11 @@ Item* available_head; // the list contains available devices
 //temporary
 int temp_id;
 
-void CloseDeviceAndExit(void) {
-	if (devh)
-		libusb_close(devh);
-	libusb_exit(NULL);
-}
-
-void DetachKernel(void) {
-	if (libusb_kernel_driver_active(devh, wIndex)) {
-		libusb_detach_kernel_driver(devh, wIndex);
-	}
-
-	returnCode = libusb_claim_interface(devh, wIndex);
-
-	if (returnCode < 0) {
-		fprintf(stderr, "Error: Cannot claim interface: %s\n",
-		libusb_error_name(returnCode));
-
-		CloseDeviceAndExit();
-		return;
-	}
-}
-
-void AttachKernel(void) {
-	libusb_release_interface(devh, wIndex);
-
-	if (!libusb_kernel_driver_active(devh, wIndex)) {
-		libusb_attach_kernel_driver(devh, wIndex);
-	}
-}
-
-int openDevice(void) {
-	const int available = getSize(available_head);
-	int choice;
-	char input_string[20];
-
-	printf("\nChoose what device you would like to operate on. Available devices:\n");
-	printAllItems(available_head);
-	printf("Enter [0] to exit.\n");
-
-	LOOP:
-		fgets(input_string, 20, stdin);
-		choice = strtol(input_string, NULL, 0);
-		if ((choice < 0) || (choice > available)) {
-			printf("Choose correct number or exit!\n");
-			fflush(stdin);
-			goto LOOP;
-		} else if (choice == 0) {
-			printf("Exiting...\n");
-			fflush(stdin);
-			return 2;
-		}
-
-	const int needed_id = getNthId(available_head, choice);
-	const char* temp_name = getName(available_head, needed_id);
-
-	//open device
-	devh = libusb_open_device_with_vid_pid(NULL, ID_VENDOR, needed_id);
-	if (!devh) {
-		fprintf(stderr, "Error: Cannot open %s\n", temp_name);
-		return -1;
-	}
-	printf("\nDevice %s is operating...\n", temp_name);
-
-	//process
-	srand((unsigned)time(NULL));
-	wIndex = getInterface(available_head, needed_id);
-	int devByte[4];
-
-	// we dont choose what we change yet
-	// devByte[0] is changed to 0x10 when we change dpi or response rate
-	// devByte[3] is changing as well
-	devByte[0] = 0x11;
-	devByte[2] = getByte3(available_head, needed_id);
-	devByte[3] = 0x3b;
-	// exclusive option for logitech pro wireless
-	switch (wIndex) {
-		case 1:
-			devByte[1] = 0xff;
-			break;
-		case 2:
-			devByte[1] = 0x01;
-			break;
-		default:
-			printf("Error: Wrong interface!\n");
-			return -1;
-	}
-
-	if (needed_id == 0xc088) {
-		wIndex = 2;
-		devByte[1] = 0xff;
-	}
-
-	uint32_t random = (uint32_t)rand();
-
-	type = 0x01; // static
-	source = random & 0x01; // 0 - primary, 1 - logo
-	R = 0xFF;
-	G = 0x66;
-	B = 0x00;
-
-	unsigned char data[20] = {devByte[0], devByte[1], devByte[2], devByte[3], source, type, R, G, B, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-	/*  detach kernel
-		&
-		claim the interface on a given device handle */
-	DetachKernel();
-	returnCode = libusb_control_transfer(devh, bmRequestType, bRequest, wValue,
-										 wIndex, data, sizeof(data), 2000);
-	if (returnCode < 0) {
-		fprintf(stderr, "Error: Cannot transfer control data: %s\n", libusb_error_name(returnCode));
-	}
-
-	/*  release the interface previously claimed
-		&
-		attach kernel */
-	AttachKernel();
-	
-	if (devh)
-		libusb_close(devh);
-
-	return EXIT_SUCCESS;
-}
-
-int getDevice(Item* head) {
-	libusb_device **list;
-	struct libusb_device_descriptor desc;
-
-	int i;
-	ssize_t count = libusb_get_device_list(global_context, &list);
-
-	for (i = 0; i < count; ++i) {
-		libusb_device *device = list[i];
-
-		if (!libusb_get_device_descriptor(device, &desc)) {
-			if (desc.idProduct == ID_PRODUCT_UNIDENTIFIED) {
-				printf("Found wireless logitech device, but it's UNIDENTIFIED.\n");
-				printf("Consider upgrading the kernel to at least version of 5.2.\nOr use wired option of your mouse.\n\n");
-				continue;
-			}
-
-			if (ID_VENDOR == desc.idVendor && searchItem(head, desc.idProduct)) {
-				const char* temp_name = getName(head, desc.idProduct);
-				const int temp_interface = getInterface(head, desc.idProduct);
-				const int temp_byte3 = getByte3(head, desc.idProduct);
-
-				pushItem(&available_head, desc.idProduct, temp_name, temp_interface, temp_byte3);
-				printf("\nDevice id=0x%x, name=%s, interface=%x - has been found!\n", desc.idProduct, temp_name, temp_interface);
-				found++;
-			}
-		}
-	}
-	if (!found) return found;
-	libusb_free_device_list(list, 1);
-
-	return 1;
-}
-
 int main(void) {
-	// init
-	returnCode = libusb_init(NULL);
-
-	#if defined(LIBUSB_API_VERSION) && (LIBUSB_API_VERSION >= 0x01000106) // >=1.0.22
-		libusb_set_option(global_context, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_ERROR);
-	#else
-		libusb_set_debug(global_context, LIBUSB_LOG_LEVEL_ERROR);
-	#endif
-
-	if (returnCode < 0) {
+	if(initUSB() < 0)
+	{
 		fprintf(stderr, "Error: Cannot initialize libusb. %s\n", libusb_error_name(returnCode));
-
-		return returnCode;
+		return 1;
 	}
 
 	// add known devices

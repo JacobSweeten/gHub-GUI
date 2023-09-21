@@ -1,4 +1,6 @@
 // Copyright 2020 Mikhail ysph Subbotin
+// Modified by Jacob Sweeten
+
 
 #include "mouselist.h"
 
